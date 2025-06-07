@@ -130,9 +130,14 @@
 </head>
 <body>
     <div class="container">
-        <h1>iNaturalist Taxa Accumulation - jeffdc</h1>
+        <h1>iNaturalist Taxa Accumulation Viewer</h1>
         
         <div class="controls">
+            <div class="control-group">
+                <label for="username">iNaturalist Username:</label>
+                <input type="text" id="username" placeholder="Enter username" value="jeffdc">
+            </div>
+            
             <div class="control-group">
                 <label for="taxonRank">Taxonomic Rank:</label>
                 <select id="taxonRank">
@@ -170,6 +175,14 @@
             <div class="control-group">
                 <button id="loadData">Load Data</button>
             </div>
+            
+            <div class="control-group">
+                <button id="clearCacheBtn" type="button" style="background-color: #e74c3c;">Clear Cache</button>
+            </div>
+        </div>
+
+        <div id="cacheInfo" class="info" style="display: none; font-size: 12px;">
+            Cache info will appear here
         </div>
 
         <div id="loadingMessage" class="loading" style="display: none;">
@@ -207,33 +220,125 @@
         </div>
 
         <div class="footer">
-            <p>Data fetched from iNaturalist API | User: jeffdc</p>
+            <p>Data fetched from iNaturalist API</p>
             <p>Taxa accumulation shows the cumulative count of new taxa observed over time</p>
-            <details style="margin-top: 15px;">
-                <summary style="cursor: pointer; color: #2c3e50; font-weight: bold;">Troubleshooting CORS Issues</summary>
-                <div style="margin-top: 10px; text-align: left; font-size: 14px; line-height: 1.5;">
-                    <p>If you get a CORS/NetworkError, try these solutions:</p>
-                    <ol>
-                        <li><strong>Enable CORS proxy:</strong> Visit <a href="https://cors-anywhere.herokuapp.com/corsdemo" target="_blank">cors-anywhere.herokuapp.com/corsdemo</a> and request temporary access</li>
-                        <li><strong>Use a local web server:</strong> Instead of opening the HTML file directly, serve it via:
-                            <ul>
-                                <li>Python: <code>python -m http.server 8000</code> then visit <code>http://localhost:8000</code></li>
-                                <li>Node.js: <code>npx http-server</code></li>
-                                <li>VS Code: Use "Live Server" extension</li>
-                            </ul>
-                        </li>
-                        <li><strong>Browser extension:</strong> Install a CORS-disabling extension (for development only)</li>
-                        <li><strong>Alternative:</strong> Export your iNaturalist data from your profile and load it manually</li>
-                    </ol>
-                </div>
-            </details>
+            <p><a href="https://github.com/yourusername/inat-taxa-accumulation" target="_blank">View source on GitHub</a></p>
         </div>
     </div>
 
     <script>
         let chart = null;
         let observationsData = [];
-        const username = 'jeffdc';
+
+        // Cache management
+        const CACHE_PREFIX = 'inat_cache_';
+        const CACHE_VERSION = '1.0';
+
+        function getCacheKey(username) {
+            return `${CACHE_PREFIX}${username}`;
+        }
+
+        function getCacheMetaKey(username) {
+            return `${CACHE_PREFIX}meta_${username}`;
+        }
+
+        function saveToCache(username, observations, lastFetchTime) {
+            try {
+                const cacheKey = getCacheKey(username);
+                const metaKey = getCacheMetaKey(username);
+                
+                // Convert observations to minimal cache format
+                const minimalObs = observations.map(obs => ({
+                    id: obs.id,
+                    uri: obs.uri,
+                    observed_on: obs.observed_on,
+                    created_at: obs.created_at,
+                    updated_at: obs.updated_at,
+                    quality_grade: obs.quality_grade,
+                    place_guess: obs.place_guess,
+                    latitude: obs.latitude,
+                    longitude: obs.longitude,
+                    taxon: obs.taxon ? {
+                        id: obs.taxon.id,
+                        name: obs.taxon.name,
+                        rank: obs.taxon.rank,
+                        species: obs.taxon.species,
+                        genus: obs.taxon.genus,
+                        family: obs.taxon.family,
+                        order: obs.taxon.order,
+                        class: obs.taxon.class,
+                        phylum: obs.taxon.phylum,
+                        kingdom: obs.taxon.kingdom
+                    } : null
+                }));
+
+                localStorage.setItem(cacheKey, JSON.stringify(minimalObs));
+                localStorage.setItem(metaKey, JSON.stringify({
+                    version: CACHE_VERSION,
+                    lastFetch: lastFetchTime,
+                    count: minimalObs.length,
+                    username: username
+                }));
+                
+                console.log(`Cached ${minimalObs.length} observations for ${username}`);
+            } catch (error) {
+                console.warn('Failed to save to cache:', error);
+            }
+        }
+
+        function loadFromCache(username) {
+            try {
+                const cacheKey = getCacheKey(username);
+                const metaKey = getCacheMetaKey(username);
+                
+                const cached = localStorage.getItem(cacheKey);
+                const meta = localStorage.getItem(metaKey);
+                
+                if (!cached || !meta) return null;
+                
+                const parsedMeta = JSON.parse(meta);
+                if (parsedMeta.version !== CACHE_VERSION) {
+                    // Clear old version cache
+                    localStorage.removeItem(cacheKey);
+                    localStorage.removeItem(metaKey);
+                    return null;
+                }
+                
+                return {
+                    observations: JSON.parse(cached),
+                    meta: parsedMeta
+                };
+            } catch (error) {
+                console.warn('Failed to load from cache:', error);
+                return null;
+            }
+        }
+
+        function clearCache(username) {
+            const cacheKey = getCacheKey(username);
+            const metaKey = getCacheMetaKey(username);
+            localStorage.removeItem(cacheKey);
+            localStorage.removeItem(metaKey);
+        }
+
+        function getCacheStats() {
+            const keys = Object.keys(localStorage).filter(key => key.startsWith(CACHE_PREFIX));
+            let totalSize = 0;
+            let userCount = 0;
+            
+            keys.forEach(key => {
+                if (key.includes('meta_')) {
+                    userCount++;
+                } else {
+                    totalSize += localStorage.getItem(key).length;
+                }
+            });
+            
+            return {
+                userCount,
+                sizeKB: Math.round(totalSize / 1024)
+            };
+        }
 
         // Event listeners
         document.getElementById('dateRange').addEventListener('change', function() {
@@ -246,9 +351,24 @@
         });
 
         document.getElementById('loadData').addEventListener('click', loadObservations);
+        document.getElementById('clearCacheBtn').addEventListener('click', function() {
+            const username = document.getElementById('username').value.trim();
+            if (username && confirm(`Clear cached data for ${username}?`)) {
+                clearCache(username);
+                showMessage(`Cache cleared for ${username}`, 'info');
+                updateCacheInfo();
+            }
+        });
         document.getElementById('taxonRank').addEventListener('change', function() {
             if (observationsData.length > 0) {
                 processAndDisplayData();
+            }
+        });
+
+        // Allow Enter key to trigger load data
+        document.getElementById('username').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                loadObservations();
             }
         });
 
@@ -318,82 +438,89 @@
             const loadingDiv = document.getElementById('loadingMessage');
             const progressBar = document.getElementById('progressBar');
             const progressText = document.getElementById('progressText');
+            const username = document.getElementById('username').value.trim();
+            
+            if (!username) {
+                showMessage('Please enter a username.', 'error');
+                return;
+            }
             
             loadButton.disabled = true;
             loadButton.textContent = 'Loading...';
             loadingDiv.style.display = 'block';
             hideMessages();
             
-            observationsData = [];
-            let page = 1;
-            let totalFetched = 0;
-            const perPage = 200; // Max allowed by API
+            let allObservations = [];
+            let newObservations = [];
+            let cachedCount = 0;
+            let fetchedCount = 0;
             
             try {
+                // Check cache first
+                const cached = loadFromCache(username);
+                let lastUpdateTime = null;
+                
+                if (cached) {
+                    allObservations = cached.observations;
+                    cachedCount = allObservations.length;
+                    lastUpdateTime = cached.meta.lastFetch;
+                    
+                    // Find the most recent updated_at time for incremental fetch
+                    const mostRecentUpdate = allObservations.reduce((latest, obs) => {
+                        const obsUpdate = new Date(obs.updated_at);
+                        return obsUpdate > latest ? obsUpdate : latest;
+                    }, new Date(0));
+                    
+                    showMessage(`Loaded ${cachedCount} observations from cache. Checking for updates...`);
+                    progressText.textContent = 'Checking for new/updated observations...';
+                }
+                
+                // Fetch new/updated observations
                 const { startDate, endDate } = getDateRange();
+                let page = 1;
+                const perPage = 200;
+                const currentTime = new Date().toISOString();
                 
                 while (true) {
-                    progressText.textContent = `Fetching page ${page}... (${totalFetched} observations loaded)`;
+                    let url = `https://api.inaturalist.org/v1/observations?user_login=${username}&per_page=${perPage}&page=${page}&order=asc&order_by=updated_at`;
                     
-                    let url = `https://api.inaturalist.org/v1/observations?user_login=${username}&per_page=${perPage}&page=${page}&order=asc&order_by=observed_on`;
-                    
+                    // Add date filters
                     if (startDate && endDate) {
                         url += `&d1=${startDate}&d2=${endDate}`;
                     }
                     
-                    // Use a CORS proxy for direct browser access
-                    const corsProxy = 'https://cors-anywhere.herokuapp.com/';
-                    const response = await fetch(corsProxy + url, {
-                        headers: {
-                            'X-Requested-With': 'XMLHttpRequest',
-                        }
-                    });
+                    // If we have cached data, only fetch observations updated since our last fetch
+                    if (lastUpdateTime) {
+                        url += `&updated_since=${lastUpdateTime}`;
+                    }
+                    
+                    progressText.textContent = `Fetching updates - page ${page}... (${fetchedCount} new/updated)`;
+                    
+                    const response = await fetch(url);
                     
                     if (!response.ok) {
-                        // If CORS proxy fails, try direct request (might work in some browsers/setups)
-                        const directResponse = await fetch(url);
-                        if (!directResponse.ok) {
-                            throw new Error(`HTTP error! status: ${response.status}. CORS error - see instructions below.`);
+                        if (response.status === 404) {
+                            throw new Error(`User "${username}" not found. Please check the username.`);
                         }
-                        const data = await directResponse.json();
-                        
-                        if (!data.results || data.results.length === 0) {
-                            break;
-                        }
-                        
-                        observationsData.push(...data.results);
-                        totalFetched += data.results.length;
-                        
-                        // Update progress bar
-                        if (data.total_results > 0) {
-                            const progress = (totalFetched / data.total_results) * 100;
-                            progressBar.style.width = `${Math.min(progress, 100)}%`;
-                        }
-                        
-                        // Break if we got fewer results than requested (last page)
-                        if (data.results.length < perPage) {
-                            break;
-                        }
-                    } else {
-                        const data = await response.json();
-                        
-                        if (!data.results || data.results.length === 0) {
-                            break;
-                        }
-                        
-                        observationsData.push(...data.results);
-                        totalFetched += data.results.length;
-                        
-                        // Update progress bar
-                        if (data.total_results > 0) {
-                            const progress = (totalFetched / data.total_results) * 100;
-                            progressBar.style.width = `${Math.min(progress, 100)}%`;
-                        }
-                        
-                        // Break if we got fewer results than requested (last page)
-                        if (data.results.length < perPage) {
-                            break;
-                        }
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    
+                    const data = await response.json();
+                    
+                    if (!data.results || data.results.length === 0) {
+                        break;
+                    }
+                    
+                    newObservations.push(...data.results);
+                    fetchedCount += data.results.length;
+                    
+                    // Update progress bar based on fetched data
+                    const totalProgress = ((cachedCount + fetchedCount) / Math.max(cachedCount + fetchedCount, 100)) * 100;
+                    progressBar.style.width = `${Math.min(totalProgress, 100)}%`;
+                    
+                    // Break if we got fewer results than requested (last page)
+                    if (data.results.length < perPage) {
+                        break;
                     }
                     
                     page++;
@@ -402,22 +529,48 @@
                     await new Promise(resolve => setTimeout(resolve, 100));
                 }
                 
+                // Merge new observations with cached ones
+                if (newObservations.length > 0) {
+                    // Create a map of existing observations by ID for efficient updates
+                    const existingMap = new Map(allObservations.map(obs => [obs.id, obs]));
+                    
+                    // Add or update observations
+                    newObservations.forEach(obs => {
+                        existingMap.set(obs.id, obs);
+                    });
+                    
+                    allObservations = Array.from(existingMap.values());
+                    
+                    // Apply date range filter if specified (since cache might contain observations outside range)
+                    if (startDate && endDate) {
+                        allObservations = allObservations.filter(obs => {
+                            if (!obs.observed_on) return false;
+                            const obsDate = obs.observed_on;
+                            return obsDate >= startDate && obsDate <= endDate;
+                        });
+                    }
+                    
+                    // Save updated cache
+                    saveToCache(username, allObservations, currentTime);
+                }
+                
+                observationsData = allObservations;
+                
                 if (observationsData.length === 0) {
-                    showMessage('No observations found for the selected criteria.', 'error');
+                    showMessage(`No observations found for user "${username}" with the selected criteria.`, 'error');
                 } else {
-                    showMessage(`Loaded ${observationsData.length} observations successfully!`);
+                    let message = `Loaded ${observationsData.length} total observations for ${username}`;
+                    if (cachedCount > 0) {
+                        message += ` (${cachedCount} from cache, ${fetchedCount} fetched)`;
+                    }
+                    showMessage(message + '!');
                     processAndDisplayData();
+                    updateTitle(username);
                 }
                 
             } catch (error) {
                 console.error('Error loading observations:', error);
-                let errorMsg = `Error loading data: ${error.message}`;
-                
-                if (error.message.includes('CORS') || error.message.includes('NetworkError')) {
-                    errorMsg += `\n\nCORS Solution Options:\n1. Use a local web server (python -m http.server or similar)\n2. Use a browser extension to disable CORS\n3. Access https://cors-anywhere.herokuapp.com/corsdemo and request temporary access\n4. Host this file on a web server instead of opening locally`;
-                }
-                
-                showMessage(errorMsg, 'error');
+                showMessage(`Error loading data: ${error.message}`, 'error');
             } finally {
                 loadButton.disabled = false;
                 loadButton.textContent = 'Load Data';
@@ -515,6 +668,34 @@
             document.getElementById('stats').style.display = 'grid';
         }
 
+        function updateCacheInfo() {
+            const username = document.getElementById('username').value.trim();
+            const cacheInfoDiv = document.getElementById('cacheInfo');
+            
+            if (username) {
+                const cached = loadFromCache(username);
+                const stats = getCacheStats();
+                
+                if (cached) {
+                    const lastFetch = new Date(cached.meta.lastFetch).toLocaleString();
+                    cacheInfoDiv.innerHTML = `Cache: ${cached.meta.count} observations for ${username} (last updated: ${lastFetch}) | Total cache: ${stats.userCount} users, ${stats.sizeKB}KB`;
+                } else {
+                    cacheInfoDiv.innerHTML = `No cached data for ${username} | Total cache: ${stats.userCount} users, ${stats.sizeKB}KB`;
+                }
+                cacheInfoDiv.style.display = 'block';
+            } else {
+                cacheInfoDiv.style.display = 'none';
+            }
+        }
+
+        // Update cache info when username changes
+        document.getElementById('username').addEventListener('input', updateCacheInfo);
+
+        function updateTitle(username) {
+            document.querySelector('h1').textContent = `iNaturalist Taxa Accumulation - ${username}`;
+            document.title = `iNaturalist Taxa Accumulation - ${username}`;
+        }
+
         function updateChart(data, rank) {
             const ctx = document.getElementById('accumulationChart').getContext('2d');
             
@@ -585,6 +766,7 @@
 
         // Load data automatically on page load
         document.addEventListener('DOMContentLoaded', function() {
+            updateCacheInfo();
             // Optional: Uncomment the next line to auto-load data when page opens
             // loadObservations();
         });
