@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iNaturalist Taxa Accumulation - jeffdc</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .controls {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        label {
+            font-weight: bold;
+            color: #34495e;
+        }
+        select, input, button {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        button {
+            background-color: #27ae60;
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #2ecc71;
+        }
+        button:disabled {
+            background-color: #bdc3c7;
+            cursor: not-allowed;
+        }
+        .chart-container {
+            position: relative;
+            height: 500px;
+            margin: 20px 0;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: #ecf0f1;
+            padding: 15px;
+            border-radius: 6px;
+            text-align: center;
+        }
+        .stat-number {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        .stat-label {
+            color: #7f8c8d;
+            font-size: 14px;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #7f8c8d;
+        }
+        .error {
+            background-color: #e74c3c;
+            color: white;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .info {
+            background-color: #3498db;
+            color: white;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .progress {
+            width: 100%;
+            background-color: #ecf0f1;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        .progress-bar {
+            height: 20px;
+            background-color: #27ae60;
+            transition: width 0.3s ease;
+        }
+        .footer {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #ecf0f1;
+            text-align: center;
+            color: #7f8c8d;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>iNaturalist Taxa Accumulation - jeffdc</h1>
+        
+        <div class="controls">
+            <div class="control-group">
+                <label for="taxonRank">Taxonomic Rank:</label>
+                <select id="taxonRank">
+                    <option value="species">Species</option>
+                    <option value="genus">Genus</option>
+                    <option value="family">Family</option>
+                    <option value="order">Order</option>
+                    <option value="class">Class</option>
+                    <option value="phylum">Phylum</option>
+                    <option value="kingdom">Kingdom</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label for="dateRange">Date Range:</label>
+                <select id="dateRange">
+                    <option value="all">All Time</option>
+                    <option value="year">Past Year</option>
+                    <option value="6months">Past 6 Months</option>
+                    <option value="month">Past Month</option>
+                    <option value="custom">Custom Range</option>
+                </select>
+            </div>
+            
+            <div class="control-group" id="customDateGroup" style="display: none;">
+                <label for="startDate">Start Date:</label>
+                <input type="date" id="startDate">
+            </div>
+            
+            <div class="control-group" id="customDateGroup2" style="display: none;">
+                <label for="endDate">End Date:</label>
+                <input type="date" id="endDate">
+            </div>
+            
+            <div class="control-group">
+                <button id="loadData">Load Data</button>
+            </div>
+        </div>
+
+        <div id="loadingMessage" class="loading" style="display: none;">
+            Loading observations...
+            <div class="progress">
+                <div class="progress-bar" id="progressBar" style="width: 0%"></div>
+            </div>
+            <div id="progressText">Fetching page 1...</div>
+        </div>
+
+        <div id="errorMessage" class="error" style="display: none;"></div>
+        <div id="infoMessage" class="info" style="display: none;"></div>
+
+        <div class="stats" id="stats" style="display: none;">
+            <div class="stat-card">
+                <div class="stat-number" id="totalObservations">0</div>
+                <div class="stat-label">Total Observations</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="uniqueTaxa">0</div>
+                <div class="stat-label">Unique Taxa</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="dateRange">0</div>
+                <div class="stat-label">Days Observed</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="avgPerDay">0</div>
+                <div class="stat-label">Avg Taxa/Day</div>
+            </div>
+        </div>
+
+        <div class="chart-container">
+            <canvas id="accumulationChart"></canvas>
+        </div>
+
+        <div class="footer">
+            <p>Data fetched from iNaturalist API | User: jeffdc</p>
+            <p>Taxa accumulation shows the cumulative count of new taxa observed over time</p>
+            <details style="margin-top: 15px;">
+                <summary style="cursor: pointer; color: #2c3e50; font-weight: bold;">Troubleshooting CORS Issues</summary>
+                <div style="margin-top: 10px; text-align: left; font-size: 14px; line-height: 1.5;">
+                    <p>If you get a CORS/NetworkError, try these solutions:</p>
+                    <ol>
+                        <li><strong>Enable CORS proxy:</strong> Visit <a href="https://cors-anywhere.herokuapp.com/corsdemo" target="_blank">cors-anywhere.herokuapp.com/corsdemo</a> and request temporary access</li>
+                        <li><strong>Use a local web server:</strong> Instead of opening the HTML file directly, serve it via:
+                            <ul>
+                                <li>Python: <code>python -m http.server 8000</code> then visit <code>http://localhost:8000</code></li>
+                                <li>Node.js: <code>npx http-server</code></li>
+                                <li>VS Code: Use "Live Server" extension</li>
+                            </ul>
+                        </li>
+                        <li><strong>Browser extension:</strong> Install a CORS-disabling extension (for development only)</li>
+                        <li><strong>Alternative:</strong> Export your iNaturalist data from your profile and load it manually</li>
+                    </ol>
+                </div>
+            </details>
+        </div>
+    </div>
+
+    <script>
+        let chart = null;
+        let observationsData = [];
+        const username = 'jeffdc';
+
+        // Event listeners
+        document.getElementById('dateRange').addEventListener('change', function() {
+            const customGroups = document.querySelectorAll('[id^="customDateGroup"]');
+            if (this.value === 'custom') {
+                customGroups.forEach(group => group.style.display = 'flex');
+            } else {
+                customGroups.forEach(group => group.style.display = 'none');
+            }
+        });
+
+        document.getElementById('loadData').addEventListener('click', loadObservations);
+        document.getElementById('taxonRank').addEventListener('change', function() {
+            if (observationsData.length > 0) {
+                processAndDisplayData();
+            }
+        });
+
+        // Set default end date to today
+        document.getElementById('endDate').valueAsDate = new Date();
+        
+        // Set default start date to one year ago
+        const oneYearAgo = new Date();
+        oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+        document.getElementById('startDate').valueAsDate = oneYearAgo;
+
+        function showMessage(message, type = 'info') {
+            const errorDiv = document.getElementById('errorMessage');
+            const infoDiv = document.getElementById('infoMessage');
+            
+            if (type === 'error') {
+                errorDiv.textContent = message;
+                errorDiv.style.display = 'block';
+                infoDiv.style.display = 'none';
+            } else {
+                infoDiv.textContent = message;
+                infoDiv.style.display = 'block';
+                errorDiv.style.display = 'none';
+            }
+        }
+
+        function hideMessages() {
+            document.getElementById('errorMessage').style.display = 'none';
+            document.getElementById('infoMessage').style.display = 'none';
+        }
+
+        function getDateRange() {
+            const dateRange = document.getElementById('dateRange').value;
+            const endDate = new Date();
+            let startDate = new Date();
+
+            switch (dateRange) {
+                case 'month':
+                    startDate.setMonth(startDate.getMonth() - 1);
+                    break;
+                case '6months':
+                    startDate.setMonth(startDate.getMonth() - 6);
+                    break;
+                case 'year':
+                    startDate.setFullYear(startDate.getFullYear() - 1);
+                    break;
+                case 'custom':
+                    startDate = new Date(document.getElementById('startDate').value);
+                    const customEndDate = new Date(document.getElementById('endDate').value);
+                    if (customEndDate > new Date('1900-01-01')) {
+                        endDate.setTime(customEndDate.getTime());
+                    }
+                    break;
+                case 'all':
+                default:
+                    return { startDate: null, endDate: null };
+            }
+
+            return { 
+                startDate: startDate.toISOString().split('T')[0], 
+                endDate: endDate.toISOString().split('T')[0] 
+            };
+        }
+
+        async function loadObservations() {
+            const loadButton = document.getElementById('loadData');
+            const loadingDiv = document.getElementById('loadingMessage');
+            const progressBar = document.getElementById('progressBar');
+            const progressText = document.getElementById('progressText');
+            
+            loadButton.disabled = true;
+            loadButton.textContent = 'Loading...';
+            loadingDiv.style.display = 'block';
+            hideMessages();
+            
+            observationsData = [];
+            let page = 1;
+            let totalFetched = 0;
+            const perPage = 200; // Max allowed by API
+            
+            try {
+                const { startDate, endDate } = getDateRange();
+                
+                while (true) {
+                    progressText.textContent = `Fetching page ${page}... (${totalFetched} observations loaded)`;
+                    
+                    let url = `https://api.inaturalist.org/v1/observations?user_login=${username}&per_page=${perPage}&page=${page}&order=asc&order_by=observed_on`;
+                    
+                    if (startDate && endDate) {
+                        url += `&d1=${startDate}&d2=${endDate}`;
+                    }
+                    
+                    // Use a CORS proxy for direct browser access
+                    const corsProxy = 'https://cors-anywhere.herokuapp.com/';
+                    const response = await fetch(corsProxy + url, {
+                        headers: {
+                            'X-Requested-With': 'XMLHttpRequest',
+                        }
+                    });
+                    
+                    if (!response.ok) {
+                        // If CORS proxy fails, try direct request (might work in some browsers/setups)
+                        const directResponse = await fetch(url);
+                        if (!directResponse.ok) {
+                            throw new Error(`HTTP error! status: ${response.status}. CORS error - see instructions below.`);
+                        }
+                        const data = await directResponse.json();
+                        
+                        if (!data.results || data.results.length === 0) {
+                            break;
+                        }
+                        
+                        observationsData.push(...data.results);
+                        totalFetched += data.results.length;
+                        
+                        // Update progress bar
+                        if (data.total_results > 0) {
+                            const progress = (totalFetched / data.total_results) * 100;
+                            progressBar.style.width = `${Math.min(progress, 100)}%`;
+                        }
+                        
+                        // Break if we got fewer results than requested (last page)
+                        if (data.results.length < perPage) {
+                            break;
+                        }
+                    } else {
+                        const data = await response.json();
+                        
+                        if (!data.results || data.results.length === 0) {
+                            break;
+                        }
+                        
+                        observationsData.push(...data.results);
+                        totalFetched += data.results.length;
+                        
+                        // Update progress bar
+                        if (data.total_results > 0) {
+                            const progress = (totalFetched / data.total_results) * 100;
+                            progressBar.style.width = `${Math.min(progress, 100)}%`;
+                        }
+                        
+                        // Break if we got fewer results than requested (last page)
+                        if (data.results.length < perPage) {
+                            break;
+                        }
+                    }
+                    
+                    page++;
+                    
+                    // Add a small delay to be respectful to the API
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+                
+                if (observationsData.length === 0) {
+                    showMessage('No observations found for the selected criteria.', 'error');
+                } else {
+                    showMessage(`Loaded ${observationsData.length} observations successfully!`);
+                    processAndDisplayData();
+                }
+                
+            } catch (error) {
+                console.error('Error loading observations:', error);
+                let errorMsg = `Error loading data: ${error.message}`;
+                
+                if (error.message.includes('CORS') || error.message.includes('NetworkError')) {
+                    errorMsg += `\n\nCORS Solution Options:\n1. Use a local web server (python -m http.server or similar)\n2. Use a browser extension to disable CORS\n3. Access https://cors-anywhere.herokuapp.com/corsdemo and request temporary access\n4. Host this file on a web server instead of opening locally`;
+                }
+                
+                showMessage(errorMsg, 'error');
+            } finally {
+                loadButton.disabled = false;
+                loadButton.textContent = 'Load Data';
+                loadingDiv.style.display = 'none';
+            }
+        }
+
+        function getTaxonKey(observation, rank) {
+            if (!observation.taxon) return null;
+            
+            const taxon = observation.taxon;
+            
+            switch (rank) {
+                case 'species':
+                    return taxon.rank === 'species' ? taxon.id : null;
+                case 'genus':
+                    return taxon.genus ? `genus_${taxon.genus}` : null;
+                case 'family':
+                    return taxon.family ? `family_${taxon.family}` : null;
+                case 'order':
+                    return taxon.order ? `order_${taxon.order}` : null;
+                case 'class':
+                    return taxon.class ? `class_${taxon.class}` : null;
+                case 'phylum':
+                    return taxon.phylum ? `phylum_${taxon.phylum}` : null;
+                case 'kingdom':
+                    return taxon.kingdom ? `kingdom_${taxon.kingdom}` : null;
+                default:
+                    return taxon.id;
+            }
+        }
+
+        function processAndDisplayData() {
+            const rank = document.getElementById('taxonRank').value;
+            const seenTaxa = new Set();
+            const dailyData = new Map();
+            
+            // Sort observations by date
+            const sortedObservations = observationsData
+                .filter(obs => obs.observed_on)
+                .sort((a, b) => new Date(a.observed_on) - new Date(b.observed_on));
+            
+            let cumulativeCount = 0;
+            
+            sortedObservations.forEach(observation => {
+                const taxonKey = getTaxonKey(observation, rank);
+                if (!taxonKey) return;
+                
+                const date = observation.observed_on;
+                
+                if (!seenTaxa.has(taxonKey)) {
+                    seenTaxa.add(taxonKey);
+                    cumulativeCount++;
+                    
+                    // Store the cumulative count for this date
+                    dailyData.set(date, cumulativeCount);
+                }
+            });
+            
+            // Fill in missing dates with previous count
+            const dates = Array.from(dailyData.keys()).sort();
+            const filledData = [];
+            let currentCount = 0;
+            
+            if (dates.length > 0) {
+                const startDate = new Date(dates[0]);
+                const endDate = new Date(dates[dates.length - 1]);
+                
+                for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+                    const dateStr = d.toISOString().split('T')[0];
+                    if (dailyData.has(dateStr)) {
+                        currentCount = dailyData.get(dateStr);
+                    }
+                    filledData.push({
+                        date: dateStr,
+                        count: currentCount
+                    });
+                }
+            }
+            
+            updateStats(sortedObservations, seenTaxa.size, filledData);
+            updateChart(filledData, rank);
+        }
+
+        function updateStats(observations, uniqueTaxa, dailyData) {
+            document.getElementById('totalObservations').textContent = observations.length.toLocaleString();
+            document.getElementById('uniqueTaxa').textContent = uniqueTaxa.toLocaleString();
+            
+            const daysObserved = new Set(observations.map(obs => obs.observed_on)).size;
+            document.getElementById('dateRange').textContent = daysObserved.toLocaleString();
+            
+            const avgPerDay = daysObserved > 0 ? (uniqueTaxa / daysObserved).toFixed(2) : 0;
+            document.getElementById('avgPerDay').textContent = avgPerDay;
+            
+            document.getElementById('stats').style.display = 'grid';
+        }
+
+        function updateChart(data, rank) {
+            const ctx = document.getElementById('accumulationChart').getContext('2d');
+            
+            if (chart) {
+                chart.destroy();
+            }
+            
+            const labels = data.map(d => d.date);
+            const counts = data.map(d => d.count);
+            
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: `Cumulative ${rank.charAt(0).toUpperCase() + rank.slice(1)} Count`,
+                        data: counts,
+                        borderColor: '#27ae60',
+                        backgroundColor: 'rgba(39, 174, 96, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: `Taxa Accumulation Over Time (${rank})`
+                        },
+                        legend: {
+                            display: true
+                        }
+                    },
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: {
+                                parser: 'YYYY-MM-DD',
+                                displayFormats: {
+                                    day: 'MMM DD',
+                                    week: 'MMM DD',
+                                    month: 'MMM YYYY'
+                                }
+                            },
+                            title: {
+                                display: true,
+                                text: 'Date'
+                            }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: `Cumulative ${rank.charAt(0).toUpperCase() + rank.slice(1)} Count`
+                            }
+                        }
+                    },
+                    interaction: {
+                        intersect: false,
+                        mode: 'index'
+                    }
+                }
+            });
+        }
+
+        // Load data automatically on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            // Optional: Uncomment the next line to auto-load data when page opens
+            // loadObservations();
+        });
+    </script>
+</body>
+</html>
