@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>iNaturalist Taxa Accumulation - jeffdc</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/date-fns/2.29.3/index.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-adapter-date-fns/2.0.0/chartjs-adapter-date-fns.bundle.min.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -736,12 +738,13 @@
                         x: {
                             type: 'time',
                             time: {
-                                parser: 'YYYY-MM-DD',
+                                unit: 'day',
                                 displayFormats: {
-                                    day: 'MMM DD',
-                                    week: 'MMM DD',
-                                    month: 'MMM YYYY'
-                                }
+                                    day: 'MMM dd',
+                                    week: 'MMM dd',
+                                    month: 'MMM yyyy'
+                                },
+                                tooltipFormat: 'MMM dd, yyyy'
                             },
                             title: {
                                 display: true,
